@@ -27,7 +27,6 @@ library(gtExtras)
 library(multicon)
 library(performance)
 library(tidymodels)
-library(stargazer)
 library(ggpmisc)
 ```
 
@@ -165,8 +164,7 @@ mvp %>%
   tab_options(data_row.padding = px(0.5)) %>%
   data_color(columns = c(OER),
              colors = col_numeric(palette = viridis(20, direction = 1, option ="B"),
-                                  domain = c(-25, 125))) #%>%
-  #tab_source_note(source_note = md("**Table**: @PattonAnalytics | **Data**: @nflfastR & @Jason_OTC")) 
+                                  domain = c(-25, 125)))  
   
 ```
 
