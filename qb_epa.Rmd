@@ -1,0 +1,348 @@
+---
+title: "Predicting Quarterback Efficiency in the NFL"
+author: "Author: Steven Patton | Twitter: @PattonAnalytics"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse) # Data Cleaning, manipulation, summarization, plotting
+library(nflplotR)
+library(gt)
+library(ggthemes) # custom pre-built themes
+library(scales)
+library(ggrepel) # better labels
+library(ggtext)
+library(ggimage)
+library(viridis)
+library(gtExtras)
+library(multicon)
+library(performance)
+library(tidymodels)
+library(ggpmisc)
+```
+
+## Introduction
+
+The past two Super Bowls have been won by quarterbacks that changed teams prior to the NFL season. Tom Brady left for Tampa Bay as a free agent ('20) and Los Angeles traded for Matthew Stafford ('21) en route to becoming World Champs. Should the immediate success of these two quarterbacks lead us to believe that Russell Wilson can do the same with a change of scenery in Denver? Could Matt Ryan's fresh start with Indianapolis end with a trip to Glendale, AZ?
+
+Heading into the '21 NFL Draft, Cincinnati faced a tough decision; protect their young quarterback (coming off an ACL injury) or add an additional receiving threat. The controversy produced a meme that foreshadowed the end of Super Bowl LVI. $$\\[0.0005in]$$
+
+```{r images, echo=FALSE,out.width="40%", out.height="20%",fig.cap="Pass Protection v. Pass Catchers",fig.show='hold',fig.align='center'}
+knitr::include_graphics(c("images/Sewell_Chase.png","images/Chase.png"))
+
+```
+
+Miami added wide receiver, Tyreek Hill, and left tackle, Terron Armstead, this offseason in hopes of improving the supporting cast around Tua Tagovailoa. Las Vegas traded for Derek Carr's former college teammate, Davante Adams, but didn't address their offensive line concerns. While Super Bowl appearances would be a success for the Dolphins and Raiders, the Bengals' blueprint may not be a sustainable path to follow.
+
+This raises an important question, does a team gain more by investing in the protection around the quarterback or the receivers he is throwing to? Team spending for these position groups may be correlated with quarterback performance. A quarterback's NFL experience and prior efficiency could also provide some explanation on future production.
+
+## Framework
+
+This analysis looks to predict [**Expected Points Added**](https://www.opensourcefootball.com/posts/2020-09-28-nflfastr-ep-wp-and-cp-models/) (EPA) per Drive for a quarterback with a minimum of 250 plays in the regular season from 2015 to 2021. Data is gathered from three sources; [**Over the Cap**](https://overthecap.com/), [**nflfastR**](https://www.nflfastr.com/index.html) and [**nflreadr**](https://nflreadr.nflverse.com/). There are a total of 237 seasons produced by 73 unique quarterbacks.
+
+The salary cap hits for a team's wide receivers and offensive line are represented in *inflated salary cap dollars* for 2022. A quarterback's NFL experience is represented with the number of years in the NFL prior to the season. If the team hired a new coach or a quarterback changed teams they are identified with *binary metrics*.
+
+The quarterback's *TOTAL* EPA from the previous season is used to help explain his EPA per drive the following year. This helps eliminate variance for quarterbacks with very little playing time the year prior. Quarterbacks that did not play in the NFL the year prior are given a value of zero. $$\\[0.0005in]$$ $$
+EPA \sim B_{0} + B_{1}Exp + B_{2}lagEPA + B_{3}nHC + B_{4}nTM + B_{5}WR + B_{6}OL
+$$ $$\\[0.0005in]$$ EPA is a continuous variable that follows a normal distribution. For an accurate prediction a linear regression model is used to fit the data. The initial assumptions are that a quarterback's experience, previous year's efficiency, and positional spending will have a positive impact on EPA. A negative relationship will be expected if a quarterback changed teams or the team hired a new head coach.
+
+## Results
+
+Before diving into the marginal effects of the explanatory metrics, we'll look at how well the model adheres to the Ordinary Least Squares (OLS) assumptions. The graphic below visualizes how well the metrics predict the observed EPA per Drive (top left). The graphic also includes residual plots for linearity (top right), homogeneity (middle left), leverage (middle right), collinearity (bottom left) and normality (bottom right).$$\\[0.0005in]$$
+
+```{r tests, echo=FALSE, fig.width=12, fig.height=10}
+
+final <- read.csv("final.csv")
+
+model <- linear_reg() %>%
+  set_engine("lm") %>%
+  fit(EPA~Exp + WR + OL + nHC + nTM + lagEPA, data=final)
+
+check_model(model)
+
+```
+
+$$\\[0.0005in]$$ All the variables in the model are statistically significant at the 5% level. This means we can interpret the coefficients by unit increases of the explanatory metrics. For every additional year of NFL experience, a quarterback is expected to have an increase of 0.012 EPA. For every 50 expected points added the year prior a quarterback produces 0.1 EPA per drive more the following year.
+
+A quarterback's EPA drops on average by 0.184 per drive if the team hires a new head coach. If the quarterback changes teams; his EPA per drive is expected to fall by 0.172. These are the only variables in the model that have a negative relationship with a quarterback's efficiency.
+
+If a team invests 10 million dollars more towards their wide receivers or offensive line, the quarterback sees an increase of 0.09 and 0.14 EPA per drive, respectively. This means that quarterback's see a higher return on EPA per drive when a team spends more on the offensive line in a given year. The marginal effects for each metric are displayed: $$\\[0.0005in]$$ $$
+EPA \sim -0.261 + 0.012Exp + 0.002lagEPA - 0.184nHC - 0.172nTM + 0.009WR + 0.014OL
+$$ $$\\[0.0005in]$$ The $R^{2}$ and adjusted $R^{2}$ (top left) are numeric representations of how well the model fits the data. Pearson's correlation coefficient (bottom right) depicts the relationship between the predicted and the actual values of EPA. The average quarterback since 2015 has produced roughly \~ 0.32 EPA per Drive. $$\\[0.0005in]$$
+
+```{r fit, echo=FALSE, message = FALSE, warning = FALSE, fig.width=13, fig.height=7}
+
+PEPA_model <- lm(EPA~Exp + lagEPA + nHC + nTM + WR + OL, data = final)
+
+PEPA <- predict(PEPA_model, final, type = "response")
+pred_EPA <- data.frame(final, PEPA) %>%
+  mutate(OE = EPA - PEPA) %>%
+  arrange(-OE) %>%
+  mutate(Rank = paste0(row_number()))
+
+pred_EPA %>%
+  ggplot(aes(x=PEPA, y=EPA)) +
+  stat_poly_line() +
+  stat_poly_eq(aes(label = paste("atop(", after_stat(rr.label), ",", after_stat(adj.rr.label), ")", 
+                                  sep = ""))) +
+  stat_correlation(label.x = "right", label.y = "bottom") +
+  geom_point() + 
+  labs(x = "PEPA per Drive",
+       y = "EPA per Drive",
+       title = "Predicted and Actual EPA per Drive",
+       subtitle = "Min. 250 regular season plays (2015-2021)",
+       caption = "Data: @nflreadr, @nflfastR & @Jason_OTC Plot: @PattonAnalytics") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(size = 10)) +
+  theme(plot.title = element_text(size = 10, face = "bold"),
+        plot.subtitle = element_text(size = 8),
+        plot.caption = element_text(size = 8))+
+  #make ticks look nice
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 8), labels = label_number(accuracy = 0.01)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 8), labels = label_number(accuracy = 0.01))
+
+```
+
+## Individual Performances
+
+Quarterbacks who won the Most Valuable Player (MVP) award from 2015 to 2021 are displayed below. The player's EPA and Predicted EPA (PEPA) per drive are listed and their rank in EPA Over Expectation is highlighted. The ranking is based on the 237 quarterback seasons observed. EPA over Expectation is the difference between EPA and PEPA per drive.
+
+Before their MVP seasons, the model expected Newton, Mahomes, and Jackson to be average starters in the NFL (Mean EPA per Drive \~ 0.32). In comparison, Ryan, Brady and Rodgers (2) were predicted to have above average seasons prior to their MVP campaigns. $$\\[0.0005in]$$
+
+```{r MVPs, echo=FALSE, message = FALSE, warning = FALSE, fig.width=12, fig.height=12}
+mvp <- pred_EPA %>%
+  filter(name=='C.Newton' & season==2015| name=='M.Ryan' & season==2016| 
+           name=='T.Brady' & season==2017 | name=='P.Mahomes' & season==2018|
+           name=='L.Jackson' & season==2019| name=='A.Rodgers' & season==2020| 
+           name=='A.Rodgers' & season==2021) %>%
+  select(Season = season, Name = name, Team = team, Drives, EPA, PEPA, OER = Rank) %>%
+  mutate(OER = as.numeric(OER)) %>%
+  as.data.frame(row.names = 1:nrow(.)) %>%
+  arrange(Season) %>% ungroup()
+
+mvp %>%
+  gt::gt() %>%
+  tab_header(title = md("**Most Valuable Players in the NFL since 2015**"),
+             subtitle = "EPA, PEPA, and Over Expectation Rank (OER)") %>%
+    cols_label(
+    Season = md("**Season**"),
+    Name = md("**Name**"),
+    Team = md("**Team**"),
+    Drives = md("**Drives**"),
+    EPA = md("**EPA**"),
+    PEPA = md("**PEPA**"),
+    OER = md("**OER**")
+  ) %>%
+  fmt_number(columns = c(EPA, PEPA), decimals = 2) %>%
+  tab_style(style = cell_text(weight = "bold"),
+            locations = cells_body(columns = c(Season, Name, Team, Drives, EPA, PEPA, OER))) %>%
+  cols_align(align = "center", columns = c(Season, Name, Team, Drives, EPA, PEPA, OER)) %>%
+  tab_style(style = cell_text(font = c(google_font(name = "Karla"), default_fonts()), size = "large"),
+            locations = cells_title(groups = "title")) %>%
+  tab_style(style = cell_text(font = c(google_font(name = "Karla"), default_fonts()), size='small'),
+            locations = list(cells_column_labels(everything()))) %>%
+  tab_style(style = cell_text(align = "center", size = "medium"), locations = cells_body()) %>%
+  tab_style(style = cell_text(font = c(google_font(name = "Rajdhani"),
+                                       default_fonts())),
+            locations = cells_body(columns = everything())) %>%
+  text_transform(locations = cells_body(c(Team)),
+                 fn = function(x) web_image(url = paste0("https://a.espncdn.com/i/teamlogos/nfl/500/", x, ".png"))) %>%
+  cols_width(c(Team) ~ px(45)) %>%
+  tab_style(style = list(cell_borders(sides = "bottom", color = "black", weight = px(3))),
+            locations = list(cells_column_labels(columns = everything()))) %>%
+  tab_options(data_row.padding = px(0.5)) %>%
+  data_color(columns = c(OER),
+             colors = col_numeric(palette = viridis(20, direction = 1, option ="B"),
+                                  domain = c(-25, 125)))  
+  
+```
+
+$$\\[0.0005in]$$ Aaron Rodger's MVP season last year ranked 96th in EPA Over Expectation, even though his EPA per Drive ranked 16th. The model accounts for the prior year's efficiency, which partially explains why Rodgers was expected to have another stellar year. This highlights how difficult it is to repeat as MVP. The graph below displays the top 25 seasons in EPA over Expectation. Matthew Stafford was the only quarterback from 2021 to rank. $$\\[0.0005in]$$
+
+```{r top, echo=FALSE, warning=FALSE, message=FALSE, fig.width=13, fig.height=7}
+
+pred_EPA %>%
+  mutate(name_yr = paste0(last_name, " '", 
+                          sprintf('%02d', season %% 100), sep = "")) %>%
+  arrange(-OE) %>%
+  slice(1:25) %>%
+  ggplot(aes(x = PEPA, y = EPA)) +
+  geom_mean_lines(aes(v_var = PEPA , h_var = EPA)) +
+  geom_nfl_logos(aes(team_abbr = team), width = 0.0275) +
+  geom_text_repel(aes(label=name_yr), segment.color = 'grey80') +
+  #titles and caption
+  labs(x = "PEPA per Drive",
+       y = "EPA per Drive",
+       title = "Mahomes' ('18) and Jackson's ('19) MVP Campaigns took the League by Storm",
+       subtitle = "Top 25 QBs in EPA over Expectation, min. 250 plays (2015-2021)",
+       caption = "Data: @nflreadr, @nflfastR & @Jason_OTC Plot: @PattonAnalytics") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(size = 10)) +
+  theme(plot.title = element_text(size = 10, face = "bold"),
+        plot.subtitle = element_text(size = 8),
+        plot.caption = element_text(size = 8))+
+  #make ticks look nice
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 8), labels = label_number(accuracy = 0.01)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 8), labels = label_number(accuracy = 0.01))
+
+```
+
+$$\\[0.0005in]$$ There have been five quarterback seasons during this time span that averaged at least 1.3 EPA per Drive. Patrick Mahomes is responsible for three of those seasons!! Mahomes (3), Rodgers (2), Prescott (2) and Tannehill (2) are the only players to have multiple seasons ranked in the top 25.
+
+40% of the quarterbacks who had season(s) in the top 25 also had season(s) in the bottom 25. Notable quarterbacks who had years remarkably under expectation were Rodgers, Ryan, Prescott, and Tannehill. The remaining quarterbacks that found themselves in both extremes; Roethlisberger, Wentz, Goff, and Trubisky.$$\\[0.0005in]$$
+
+```{r bottom, echo=FALSE, warning=FALSE, message=FALSE, fig.width=13, fig.height=7}
+
+pred_EPA %>%
+  mutate(name_yr = paste0(last_name, " '", 
+                          sprintf('%02d', season %% 100), sep = "")) %>%
+  arrange(OE) %>%
+  slice(1:25) %>%
+  ggplot(aes(x = PEPA, y = EPA)) +
+  geom_mean_lines(aes(v_var = PEPA , h_var = EPA)) +
+  geom_nfl_logos(aes(team_abbr = team), width = 0.0275) +
+  geom_text_repel(aes(label=name_yr), segment.color = 'grey80') +
+  #titles and caption
+  labs(x = "PEPA per Drive",
+       y = "EPA per Drive",
+       title = "Goff's ('16) and Rosen's ('18) Rookie Years were Historically Bad",
+       subtitle = "Bottom 25 QBs in EPA over Expectation, min. 250 plays (2015-2021)",
+       caption = "Data: @nflreadr, @nflfastR & @Jason_OTC Plot: @PattonAnalytics") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(size = 10)) +
+  theme(plot.title = element_text(size = 10, face = "bold"),
+        plot.subtitle = element_text(size = 8),
+        plot.caption = element_text(size = 8))+
+  #make ticks look nice
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 8), labels = label_number(accuracy = 0.01)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 8), labels = label_number(accuracy = 0.01))
+
+
+```
+
+$$\\[0.0005in]$$Several of these quarterbacks were traded (Tannehill, Rosen, Darnold, Wentz, & Mayfield) or retired (Manning & Roethlisberger) shortly after these underwhelming seasons. The Ravens, known for being an analytically driven front office, drafted Lamar Jackson after Joe Flacco's forgettable 2017 campaign.
+
+Four out of the five quarterbacks who finished in the bottom 25 last year are no longer the starter for that team. The Browns traded Mayfield for a conditional fifth round pick to Carolina, the Commanders traded for Wentz in an attempt to upgrade from Heinicke, Dalton signed with the Saints in free agency and Roethlisberger retired from the Steelers. Fields, the only rookie of the bunch, is still the starter with the Bears.
+
+## Future Predictions
+
+The predictions for the starting quarterbacks this season are calculated by plugging in the marginal effects from the model. According to [**Vegas Insider**](https://www.vegasinsider.com/nfl/odds/mvp/), the MVP betting favorites currently are:
+
+1.  Josh Allen (+650)
+2.  Patrick Mahomes (+750)
+3.  Tom Brady (+800)
+4.  Aaron Rodgers (+850)
+5.  Justin Herbert (+900)
+
+The model expects these MVP frontrunners to finish among the top seven in Predicted EPA. The projections should correlate with \~ 61% of the season's final results and explain \~ 37% of the variance in EPA per Drive. Lag EPA represents the total EPA the quarterback produced the year prior. The binary metrics that represent whether the quarterback has changed teams or the team hired a new head coach are not displayed.$$\\[0.0005in]$$
+
+```{r projections, echo=FALSE, warning=FALSE, message=FALSE}
+qb22 <- read.csv("qb22.csv") %>%
+  select(-c(nHC, nTM)) %>%
+  arrange(-pepa) %>%
+  mutate(rank = as.numeric(paste0(row_number())))
+
+qb1 <- qb22 %>%
+  slice(1:16) %>%
+  mutate(ID = row_number())
+
+qb2 <- qb22 %>%
+  slice(17:32) %>%
+  rename(name2 = name, team2 = team, exp2 = exp, 
+         lag_epa2 = lag_epa, wr2 = wr, ol2 = ol, pepa2 = pepa, rank2 = rank) %>%
+  mutate(ID = row_number())
+
+qb0 <- merge(qb1, qb2, by = c('ID')) %>%
+  select(-c(ID))
+
+rm(qb1, qb2)
+
+qb0 %>%
+  gt::gt() %>%
+  tab_header(title = md("**Predicted EPA per Drive for Projected NFL Starters (2022)**"),
+             subtitle = "Years Experience (Exp), Prior Efficiency (lag EPA), Active Cap Hits in Millions") %>%
+  cols_move_to_start(columns = c(rank, name, team, exp, lag_epa, wr, ol, pepa, rank2)) %>%
+    cols_label(
+    rank = md(""),
+    name = md("**Name**"),
+    team = md("**Team**"),
+    exp = md("**Exp**"),
+    lag_epa = md("**Lag EPA**"),
+    wr = md("**WR**"),
+    ol = md("**OL**"),
+    pepa = md("**PEPA**"),
+    rank2 = md(""),
+    name2 = md("**Name**"),
+    team2 = md("**Team**"),
+    exp2 = md("**Exp**"),
+    lag_epa2 = md("**Lag EPA**"),
+    wr2 = md("**WR**"),
+    ol2 = md("**OL**"),
+    pepa2 = md("**PEPA**")
+  ) %>%
+  fmt_number(columns = c(lag_epa, pepa, lag_epa2, pepa2), decimals = 2) %>%
+  tab_style(style = cell_text(weight = "bold"),
+            locations = cells_body(columns = c(rank, name, team, exp, lag_epa, wr, ol, pepa, 
+                                               rank2, name2, team2, exp2, lag_epa2, wr2, ol2, pepa2))) %>%
+  cols_align(align = "center", columns = c(rank, name, team, exp, lag_epa, wr, ol, pepa, rank2,
+                                               name2, team2, exp2, lag_epa2, wr2, ol2, pepa2)) %>%
+  tab_style(style = cell_text(font = c(google_font(name = "Karla"), default_fonts()), size = "large"),
+            locations = cells_title(groups = "title")) %>%
+  tab_style(style = cell_text(font = c(google_font(name = "Karla"), default_fonts()), size='small'),
+            locations = list(cells_column_labels(everything()))) %>%
+  tab_style(style = cell_text(align = "center", size = "medium"), locations = cells_body()) %>%
+  tab_style(style = cell_text(font = c(google_font(name = "Rajdhani"),
+                                       default_fonts())),
+            locations = cells_body(columns = everything())) %>%
+  text_transform(locations = cells_body(c(team, team2)),
+                 fn = function(x) web_image(url = paste0("https://a.espncdn.com/i/teamlogos/nfl/500/", x, ".png"))) %>%
+  cols_width(c(team, team2) ~ px(45)) %>%
+  tab_style(style = list(cell_borders(sides = "bottom", color = "black", weight = px(3))),
+            locations = list(cells_column_labels(columns = everything()))) %>%
+  tab_options(data_row.padding = px(0.5)) %>%
+  data_color(columns = c(pepa, pepa2),
+             colors = col_numeric(palette = viridis(20, direction = -1, option ="D"),
+                                  domain = c(-0.1, 1.5))) %>%
+    tab_style(style = list(cell_borders(sides = "right", color = "black", weight = px(3))),
+            locations = list(cells_body(columns = c(pepa, pepa2)))) %>%
+  tab_source_note(source_note = md("**Table**: @PattonAnalytics | **Data**: @nflreadr, @nflfastR & @Jason_OTC")) 
+  
+```
+
+$$\\[0.0005in]$$ Six projected starters for this upcoming season were drafted last year. Five of those six quarterbacks were drafted in the first round. Their PEPA rankings are fairly indicative of their supporting casts. The Patriots, Jets and 49ers have invested in the protection and weapons around their young quarterback. The offensive line and wide receivers for the Texans, Jaguars and Bears have more question marks than answers.
+
+-   Mac Jones (11)
+-   Zach Wilson (17)
+-   Trey Lance (21)
+-   Davis Mills (27)
+-   Trevor Lawrence (30)
+-   Justin Fields (32)
+
+Jalen Hurts is primed to have a big year behind arguably the best offensive line in football. The Eagles have spent first round picks the last three years on wide receivers; Jalen Reagor ('20), DeVonta Smith ('21) and AJ Brown ('22). While Reagor is struggling to make a roster spot, drafting DeVonta and trading for AJ over the past two years have been phenomenal additions by Howie Roseman.
+
+## Shortcomings
+
+Active cap hits in this model do not account for injuries and suspensions. Tom Brady's starting center, Ryan Jensen, is doubtful to start the season and his star receiver, Chris Godwin, is coming off an ACL injury. These injuries will effect the performance of the offense in Tampa Bay. The Cardinal's star wide receiver, DeAndre Hopkins, is suspended for the first six games of the season which should have a negative impact on Kyler Murray's production.
+
+These projections also fail to identify a team's net gain on investment for different position groups. The model assumes the active salary cap hits for wide receivers and the offensive line are efficiently allocated. This assumption unfortunately isn't true. For example, Joe Burrow's top two wide receivers, Chase and Higgins, are both on rookie contracts. Their salary cap hits are significantly smaller than the production they've provided.
+
+The Dolphins and Raiders acquired elite wide receivers in the NFL and signed them to massive extensions. The cap hits for Tyreek Hill and Davante Adams in '22 are fairly low compared to their contracts' Annual Average Value (AAV). These additions are probably undervalued which means Tua Tagovailoa and Derek Carr should perform over expectation.
+
+Team spending on position groups is one way to evaluate a team's abilities by it's parts. Another way could be utilizing metrics from [**Next Gen Stats**](https://nextgenstats.nfl.com/glossary) (NGS). *Average Yards Over Expecation* and *Average Separation* for a wide receiver room from the previous year may yield a more accurate prediction of a quarterback's efficiency. Likewise, *Pass Block Win Rate* (PBWR) from [**ESPN**](https://www.espn.com/nfl/story/_/id/24892208/creating-better-nfl-pass-blocking-pass-rushing-stats-analytics-explainer-faq-how-work#full) correlates with cap expenditure, but could provide a more insightful impact on performance moving forward. These statistics from NGS (since 2016) and ESPN (since 2019) have only been around for a few years. The lack of data is the reason why they are omitted in this analysis.
+
+## Concluding Thoughts
+
+The Dolphins, Raiders, Broncos and Colts offseason acquisitions mirror teams that have made the Super Bowl in the past couple of years. The Dolphins and Raiders decided to invest in pass catchers over pass protection. While these teams have a surplus of receiving threats, the only team spending less on their offensive line are the Steelers. Their projected starter, Trubisky, is ranked next to last in Predicted EPA (PEPA). On average, quarterbacks don't do well behind cheap offensive lines. The Bengals' Super Bowl run should be viewed as an outlier, not a recipe for team building.
+
+The Broncos' believed they were "a QB away" and traded for Russell Wilson this past spring. The Buccanneers and Rams won championships with this blueprint. However, both of those teams had proven coaches in Bruce Arians and Sean McVay. Nathaniel Hackett was just hired as the head coach in Denver. In a competitive division, a new system, and Tim Patrick's ACL injury, immediate success shouldn't be expected for Wilson and Co. They have the foundation to make a run in the next couple of years, but growing pains seem imminent this year.
+
+Indianapolis' acquisition of Matt Ryan should not be overlooked. They are a well coached team under Frank Reich with one of the better offensive lines in the NFL. They have a rising star in Michael Pittman, a bell cow in Jonathan Taylor and several play makers on defense. If a quarterback was to make a Super Bowl run after switching teams, Ryan and the Colts (+2380) should be the betting favorite over Wilson and the Broncos (+1620). $$\\[0.0005in]$$
