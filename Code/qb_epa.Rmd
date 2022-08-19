@@ -101,8 +101,6 @@ pred_EPA %>%
        title = "Predicted and Actual EPA per Drive",
        subtitle = "Min. 250 regular season plays (2015-2021)",
        caption = "Data: @nflreadr, @nflfastR & @Jason_OTC Plot: @PattonAnalytics") +
-  scale_alpha_identity() +
-  scale_color_identity() +
   theme_fivethirtyeight() +
   theme(axis.title = element_text(size = 10)) +
   theme(plot.title = element_text(size = 10, face = "bold"),
@@ -187,8 +185,6 @@ pred_EPA %>%
        title = "Mahomes' ('18) and Jackson's ('19) MVP Campaigns took the League by Storm",
        subtitle = "Top 25 QBs in EPA over Expectation, min. 250 plays (2015-2021)",
        caption = "Data: @nflreadr, @nflfastR & @Jason_OTC Plot: @PattonAnalytics") +
-  scale_alpha_identity() +
-  scale_color_identity() +
   theme_fivethirtyeight() +
   theme(axis.title = element_text(size = 10)) +
   theme(plot.title = element_text(size = 10, face = "bold"),
@@ -221,8 +217,6 @@ pred_EPA %>%
        title = "Goff's ('16) and Rosen's ('18) Rookie Years were Historically Bad",
        subtitle = "Bottom 25 QBs in EPA over Expectation, min. 250 plays (2015-2021)",
        caption = "Data: @nflreadr, @nflfastR & @Jason_OTC Plot: @PattonAnalytics") +
-  scale_alpha_identity() +
-  scale_color_identity() +
   theme_fivethirtyeight() +
   theme(axis.title = element_text(size = 10)) +
   theme(plot.title = element_text(size = 10, face = "bold"),
@@ -267,12 +261,10 @@ qb2 <- qb22 %>%
          lag_epa2 = lag_epa, wr2 = wr, ol2 = ol, pepa2 = pepa, rank2 = rank) %>%
   mutate(ID = row_number())
 
-qb0 <- merge(qb1, qb2, by = c('ID'))
+qb0 <- merge(qb1, qb2, by = c('ID')) %>%
+  select(-c(ID))
 
 rm(qb1, qb2)
-
-qb0 <- qb0 %>%
-  select(-c(ID))
 
 qb0 %>%
   gt::gt() %>%
